@@ -1,0 +1,26 @@
+CLASS LightsOutGame:
+    FUNCTION Initialize(root_window):
+        Set window title to "Lights Out"
+        Set window dimensions to 400x500
+        
+        Set grid_size = 5
+        Initialize 5x5 grid with all lights OFF (False)
+        Initialize empty move history
+        Set game_won status to False
+        
+        Call Create_UI()
+        Call Start_New_Game()
+    
+    FUNCTION Create_UI():
+        Create main layout window
+        
+        FOR row FROM 0 TO grid_size - 1:
+            FOR column FROM 0 TO grid_size - 1:
+                Create button at position (row, column)
+                Set button click event to trigger Toggle_Light(row, column)
+                Set button background color to OFF (black)
+            END FOR
+        END FOR
+        
+        Create "New Game" button
+END CLASS
