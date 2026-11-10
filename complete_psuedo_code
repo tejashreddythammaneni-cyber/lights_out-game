@@ -1,0 +1,131 @@
+COMPLETE PSEUDOCODE – LIGHTS OUT PUZZLE GAME
+
+CLASS LightsOutGame:
+
+FUNCTION Initialize(root_window):
+
+    Set window title to "Lights Out"
+    Set window dimensions to 400x500
+
+    Set grid_size = 5
+    Initialize 5x5 grid with all lights OFF (False)
+
+    Initialize empty move history
+    Set game_won status to False
+
+    Call Create_UI()
+    Call Start_New_Game()
+
+
+FUNCTION Create_UI():
+
+    Create main layout window
+
+    FOR row FROM 0 TO grid_size - 1:
+
+        FOR column FROM 0 TO grid_size - 1:
+
+            Create button at position (row, column)
+
+            Set button click event to trigger
+            Toggle_Light(row, column)
+
+            Set button background color to OFF (black)
+
+        END FOR
+
+    END FOR
+
+    Create "New Game" button
+
+    Set New Game button click event to
+    Start_New_Game()
+
+
+FUNCTION Start_New_Game():
+
+    Set all lights to OFF (False)
+
+    Set game_won status to False
+
+    Clear move history
+
+    Generate a random solvable puzzle by
+    performing random light clicks
+
+    Call Update_UI()
+
+
+FUNCTION Toggle_Light(row, column):
+
+    IF game_won is True:
+
+        Return
+
+    END IF
+
+    Toggle the selected light at (row, column)
+
+    Toggle the light above it (if inside grid)
+
+    Toggle the light below it (if inside grid)
+
+    Toggle the light on the left (if inside grid)
+
+    Toggle the light on the right (if inside grid)
+
+    Add (row, column) to move history
+
+    Call Update_UI()
+
+    Call Check_Win()
+
+
+FUNCTION Update_UI():
+
+    FOR row FROM 0 TO grid_size - 1:
+
+        FOR column FROM 0 TO grid_size - 1:
+
+            IF light[row][column] is True:
+
+                Set button color to ON (yellow)
+
+            ELSE:
+
+                Set button color to OFF (black)
+
+            END IF
+
+        END FOR
+
+    END FOR
+
+
+FUNCTION Check_Win():
+
+    Set all_off = True
+
+    FOR row FROM 0 TO grid_size - 1:
+
+        FOR column FROM 0 TO grid_size - 1:
+
+            IF light[row][column] is True:
+
+                Set all_off = False
+
+            END IF
+
+        END FOR
+
+    END FOR
+
+    IF all_off is True:
+
+        Set game_won status to True
+
+        Display "Congratulations! You Won!"
+
+    END IF
+
+END CLASS
