@@ -1,0 +1,564 @@
+import pygame
+import random
+import math
+import json
+import os
+import array
+
+pygame.init()
+
+# ---------------- WINDOW ----------------
+WIDTH, HEIGHT = 1100, 750
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("NEON LIGHTS OUT")
+clock = pygame.time.Clock()
+
+# ---------------- COLOURS ----------------
+BG = (8, 10, 28)
+PANEL = (19, 23, 52)
+WHITE = (245, 248, 255)
+CYAN = (0, 240, 255)
+PINK = (255, 40, 180)
+PURPLE = (150, 80, 255)
+GREEN = (70, 255, 150)
+YELLOW = (255, 220, 70)
+GREY = (100, 110, 140)
+DARK = (35, 40, 70)
+
+# ---------------- FONTS ----------------
+font_small = pygame.font.SysFont("arial", 20)
+font_medium = pygame.font.SysFont("arial", 27, bold=True)
+font_large = pygame.font.SysFont("arial", 48, bold=True)
+font_title = pygame.font.SysFont("arial", 65, bold=True)
+
+# ---------------- GAME SETTINGS ----------------
+DIFFICULTIES = {
+    "EASY": 3,
+    "MEDIUM": 4,
+    "HARD": 5,
+    "EXPERT": 6
+}
+
+difficulty_names = list(DIFFICULTIES.keys())
+difficulty_index = 0
+mode = "LEVELS"
+volume = 0.5
+
+difficulty = "EASY"
+size = 3
+board = []
+moves = 0
+level = 1
+unlocked_level = 1
+start_time = 0
+elapsed_time = 0
+paused = False
+game_won = False
+screen_name = "menu"
+
+SAVE_FILE = "lights_out_save.json"
+
+# ---------------- SOUND ----------------
+def make_tone(frequency=600, duration=0.10):
+    try:
+        sample_rate = 44100
+        samples = array.array("h")
+        for i in range(int(sample_rate * duration)):
+            value = int(5000 * math.sin(
+                2 * math.pi * frequency * i / sample_rate
+            ))
+            samples.append(value)
+        return pygame.mixer.Sound(buffer=samples.tobytes())
+    except Exception:
+        return None
+
+try:
+    pygame.mixer.init()
+    click_sound = make_tone(700, 0.07)
+    win_sound = make_tone(1000, 0.25)
+except Exception:
+    click_sound = None
+    win_sound = None
+
+def play_sound(sound):
+    if sound:
+        sound.set_volume(volume)
+        sound.play()
+
+# ---------------- SAVE PROGRESS ----------------
+def load_progress():
+    global unlocked_level, volume
+
+    if os.path.exists(SAVE_FILE):
+        try:
+            with open(SAVE_FILE, "r") as file:
+                data = json.load(file)
+                unlocked_level = data.get("unlocked_level", 1)
+                volume = data.get("volume", 0.5)
+        except Exception:
+            unlocked_level = 1
+
+def save_progress():
+    data = {
+        "unlocked_level": unlocked_level,
+        "volume": volume
+    }
+
+    with open(SAVE_FILE, "w") as file:
+        json.dump(data, file)
+
+load_progress()
+
+# ---------------- DRAWING HELPERS ----------------
+def draw_text(text, font, color, x, y, center=True):
+    image = font.render(str(text), True, color)
+    rect = image.get_rect()
+
+    if center:
+        rect.center = (x, y)
+    else:
+        rect.topleft = (x, y)
+
+    screen.blit(image, rect)
+    return rect
+
+def draw_button(text, x, y, w, h, color=CYAN):
+    mouse = pygame.mouse.get_pos()
+    rect = pygame.Rect(x, y, w, h)
+
+    hover = rect.collidepoint(mouse)
+    fill = (35, 55, 85) if hover else PANEL
+
+    pygame.draw.rect(screen, fill, rect, border_radius=15)
+    pygame.draw.rect(screen, color, rect, 3, border_radius=15)
+
+    draw_text(text, font_medium, WHITE, x + w // 2, y + h // 2)
+
+    return rect
+
+def background():
+    screen.fill(BG)
+
+    # Neon decorative circles
+    pygame.draw.circle(screen, (18, 25, 55), (100, 100), 80, 2)
+    pygame.draw.circle(screen, (25, 20, 60), (1000, 650), 100, 2)
+
+    for x in range(0, WIDTH, 50):
+        pygame.draw.line(screen, (15, 20, 43), (x, 0), (x, HEIGHT))
+
+    for y in range(0, HEIGHT, 50):
+        pygame.draw.line(screen, (15, 20, 43), (0, y), (WIDTH, y))
+
+# ---------------- LIGHTS OUT LOGIC ----------------
+def toggle_tile(row, col):
+    positions = [
+        (row, col),
+        (row - 1, col),
+        (row + 1, col),
+        (row, col - 1),
+        (row, col + 1)
+    ]
+
+    for r, c in positions:
+        if 0 <= r < size and 0 <= c < size:
+            board[r][c] = not board[r][c]
+
+def is_solved():
+    for row in board:
+        for tile in row:
+            if tile:
+                return False
+    return True
+
+def scramble_board(number_of_moves):
+    global board
+
+    board = [[False for _ in range(size)] for _ in range(size)]
+
+    # Scrambling through legal moves guarantees a solvable puzzle.
+    for _ in range(number_of_moves):
+        r = random.randrange(size)
+        c = random.randrange(size)
+        toggle_tile(r, c)
+
+# ---------------- START GAME ----------------
+def start_game():
+    global board, moves, size, difficulty
+    global start_time, elapsed_time, paused, game_won
+    global screen_name
+
+    difficulty = difficulty_names[difficulty_index]
+    size = DIFFICULTIES[difficulty]
+
+    moves = 0
+    elapsed_time = 0
+    paused = False
+    game_won = False
+    start_time = pygame.time.get_ticks()
+
+    if mode == "LEVELS":
+        scramble_count = 5 + level * 2
+    else:
+        scramble_count = size * size * 3
+
+    scramble_board(scramble_count)
+    screen_name = "game"
+
+# ---------------- GRID ----------------
+def draw_board():
+    cell_size = min(75, 390 // size)
+    gap = 9
+
+    total = size * cell_size + (size - 1) * gap
+    start_x = (WIDTH - total) // 2
+    start_y = 220
+
+    for r in range(size):
+        for c in range(size):
+            x = start_x + c * (cell_size + gap)
+            y = start_y + r * (cell_size + gap)
+
+            rect = pygame.Rect(x, y, cell_size, cell_size)
+
+            if board[r][c]:
+                fill = (15, 100, 125)
+                border = CYAN
+            else:
+                fill = (25, 28, 55)
+                border = GREY
+
+            pygame.draw.rect(screen, fill, rect, border_radius=12)
+            pygame.draw.rect(screen, border, rect, 3, border_radius=12)
+
+            if board[r][c]:
+                pygame.draw.circle(
+                    screen, CYAN, rect.center, cell_size // 5
+                )
+
+def get_tile_clicked(pos):
+    cell_size = min(75, 390 // size)
+    gap = 9
+
+    total = size * cell_size + (size - 1) * gap
+    start_x = (WIDTH - total) // 2
+    start_y = 220
+
+    for r in range(size):
+        for c in range(size):
+            x = start_x + c * (cell_size + gap)
+            y = start_y + r * (cell_size + gap)
+
+            rect = pygame.Rect(x, y, cell_size, cell_size)
+
+            if rect.collidepoint(pos):
+                return r, c
+
+    return None
+
+# ---------------- WIN SCREEN ----------------
+def finish_game():
+    global game_won, screen_name, unlocked_level
+
+    game_won = True
+    screen_name = "won"
+    play_sound(win_sound)
+
+    if mode == "LEVELS":
+        if level >= unlocked_level:
+            unlocked_level = level + 1
+
+    save_progress()
+
+def calculate_stars():
+    if moves <= size * size:
+        return 3
+    elif moves <= size * size * 2:
+        return 2
+    return 1
+
+# ---------------- MENU SCREEN ----------------
+def draw_menu():
+    background()
+
+    draw_text("NEON LIGHTS OUT", font_title, CYAN, WIDTH // 2, 110)
+    draw_text("Switch OFF every light to win!", font_medium,
+              WHITE, WIDTH // 2, 165)
+
+    draw_text("GAME MODE", font_medium, PINK, WIDTH // 2, 235)
+
+    mode_rect = draw_button(
+        mode, 390, 265, 320, 55, PINK
+    )
+
+    draw_text("DIFFICULTY", font_medium, PURPLE,
+              WIDTH // 2, 360)
+
+    diff_rect = draw_button(
+        difficulty_names[difficulty_index],
+        390, 390, 320, 55, PURPLE
+    )
+
+    start_rect = draw_button(
+        "START GAME", 390, 475, 320, 65, CYAN
+    )
+
+    settings_rect = draw_button(
+        "SETTINGS", 390, 560, 150, 50, GREEN
+    )
+
+    quit_rect = draw_button(
+        "QUIT", 560, 560, 150, 50, PINK
+    )
+
+    draw_text(
+        "Unlocked level: " + str(unlocked_level),
+        font_small, YELLOW, WIDTH // 2, 650
+    )
+
+    return mode_rect, diff_rect, start_rect, settings_rect, quit_rect
+
+# ---------------- SETTINGS SCREEN ----------------
+def draw_settings():
+    background()
+
+    draw_text("SETTINGS", font_title, CYAN, WIDTH // 2, 140)
+    draw_text("SOUND VOLUME", font_medium, WHITE,
+              WIDTH // 2, 280)
+
+    bar = pygame.Rect(350, 340, 400, 15)
+    pygame.draw.rect(screen, GREY, bar, border_radius=8)
+
+    filled = int(400 * volume)
+    pygame.draw.rect(
+        screen, CYAN,
+        (350, 340, filled, 15),
+        border_radius=8
+    )
+
+    pygame.draw.circle(
+        screen, WHITE,
+        (350 + filled, 347), 13
+    )
+
+    draw_text(str(int(volume * 100)) + "%",
+              font_medium, YELLOW, WIDTH // 2, 395)
+
+    back_rect = draw_button(
+        "BACK", 425, 500, 250, 60, PINK
+    )
+
+    return bar, back_rect
+
+# ---------------- GAME SCREEN ----------------
+def draw_game():
+    background()
+
+    draw_text("NEON LIGHTS OUT", font_large, CYAN,
+              WIDTH // 2, 65)
+
+    if mode == "LEVELS":
+        draw_text(
+            "LEVEL " + str(level),
+            font_medium, YELLOW, WIDTH // 2, 125
+        )
+    else:
+        draw_text("UNLIMITED MODE", font_medium,
+                  YELLOW, WIDTH // 2, 125)
+
+    current_time = elapsed_time
+    if not paused:
+        current_time = (pygame.time.get_ticks() - start_time) // 1000
+
+    draw_text("Moves: " + str(moves),
+              font_medium, WHITE, 180, 175)
+
+    draw_text(
+        "Time: " + str(current_time) + " sec",
+        font_medium, WHITE, 920, 175
+    )
+
+    draw_board()
+
+    pause_text = "RESUME" if paused else "PAUSE"
+
+    pause_rect = draw_button(
+        pause_text, 330, 660, 180, 55, YELLOW
+    )
+
+    restart_rect = draw_button(
+        "RESTART", 590, 660, 180, 55, PINK
+    )
+
+    return pause_rect, restart_rect
+
+# ---------------- PAUSE SCREEN ----------------
+def draw_pause():
+    overlay = pygame.Surface((WIDTH, HEIGHT))
+    overlay.set_alpha(190)
+    overlay.fill((0, 0, 0))
+    screen.blit(overlay, (0, 0))
+
+    draw_text("GAME PAUSED", font_large, YELLOW,
+              WIDTH // 2, 300)
+
+    draw_text("Press RESUME to continue",
+              font_medium, WHITE, WIDTH // 2, 360)
+
+# ---------------- WIN SCREEN ----------------
+def draw_win():
+    background()
+
+    stars = calculate_stars()
+
+    draw_text("YOU WON!", font_title, GREEN,
+              WIDTH // 2, 160)
+
+    draw_text("".join(["★" for _ in range(stars)]),
+              font_title, YELLOW, WIDTH // 2, 270)
+
+    draw_text("Moves: " + str(moves),
+              font_medium, WHITE, WIDTH // 2, 350)
+
+    draw_text(
+        "Time: " + str(elapsed_time) + " seconds",
+        font_medium, WHITE, WIDTH // 2, 400
+    )
+
+    next_rect = draw_button(
+        "NEXT LEVEL", 390, 490, 320, 60, CYAN
+    )
+
+    menu_rect = draw_button(
+        "MAIN MENU", 390, 570, 320, 55, PINK
+    )
+
+    return next_rect, menu_rect
+
+# ---------------- MAIN LOOP ----------------
+running = True
+settings_bar = None
+
+while running:
+    clock.tick(60)
+
+    if screen_name == "menu":
+        mode_rect, diff_rect, start_rect, settings_rect, quit_rect = draw_menu()
+
+    elif screen_name == "settings":
+        settings_bar, back_rect = draw_settings()
+
+    elif screen_name == "game":
+        pause_rect, restart_rect = draw_game()
+
+        if paused:
+            draw_pause()
+
+    elif screen_name == "won":
+        next_rect, menu_rect = draw_win()
+
+    pygame.display.flip()
+
+    for event in pygame.event.get():
+
+        if event.type == pygame.QUIT:
+            save_progress()
+            running = False
+
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                if screen_name == "game":
+                    paused = not paused
+                    if paused:
+                        elapsed_time = (pygame.time.get_ticks() - start_time) // 1000
+                    else:
+                        start_time = pygame.time.get_ticks() - elapsed_time * 1000
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            pos = event.pos
+
+            # MENU
+            if screen_name == "menu":
+
+                if mode_rect.collidepoint(pos):
+                    mode = "UNLIMITED" if mode == "LEVELS" else "LEVELS"
+                    play_sound(click_sound)
+
+                elif diff_rect.collidepoint(pos):
+                    difficulty_index = (
+                        difficulty_index + 1
+                    ) % len(difficulty_names)
+                    play_sound(click_sound)
+
+                elif start_rect.collidepoint(pos):
+                    level = min(unlocked_level, 100)
+                    start_game()
+                    play_sound(click_sound)
+
+                elif settings_rect.collidepoint(pos):
+                    screen_name = "settings"
+                    play_sound(click_sound)
+
+                elif quit_rect.collidepoint(pos):
+                    running = False
+
+            # SETTINGS
+            elif screen_name == "settings":
+
+                if back_rect.collidepoint(pos):
+                    screen_name = "menu"
+                    save_progress()
+
+                elif settings_bar.collidepoint(pos):
+                    volume = max(
+                        0, min(1, (pos[0] - 350) / 400)
+                    )
+                    save_progress()
+
+            # GAME
+            elif screen_name == "game":
+
+                if paused:
+                    if pause_rect.collidepoint(pos):
+                        paused = False
+                        start_time = (
+                            pygame.time.get_ticks()
+                            - elapsed_time * 1000
+                        )
+                else:
+                    if pause_rect.collidepoint(pos):
+                        paused = True
+                        elapsed_time = (
+                            pygame.time.get_ticks() - start_time
+                        ) // 1000
+
+                    elif restart_rect.collidepoint(pos):
+                        start_game()
+
+                    else:
+                        clicked = get_tile_clicked(pos)
+
+                        if clicked:
+                            r, c = clicked
+                            toggle_tile(r, c)
+                            moves += 1
+                            play_sound(click_sound)
+
+                            if is_solved():
+                                elapsed_time = (
+                                    pygame.time.get_ticks()
+                                    - start_time
+                                ) // 1000
+                                finish_game()
+
+            # WIN SCREEN
+            elif screen_name == "won":
+
+                if next_rect.collidepoint(pos):
+                    if mode == "LEVELS":
+                        level += 1
+                    start_game()
+
+                elif menu_rect.collidepoint(pos):
+                    screen_name = "menu"
+
+pygame.quit()
